@@ -70,6 +70,13 @@ class WorkanaScraper:
         text = re.sub(r"<[^>]+>", " ", text)
         return " ".join(text.split()).strip()
 
+    def _img_src_from_html(self, img_html):
+        """Extract the src URL from an <img ...> HTML string. Returns '' if none."""
+        if not img_html:
+            return ""
+        m = re.search(r'src\s*=\s*"([^"]+)"', img_html) or re.search(r"src\s*=\s*'([^']+)'", img_html)
+        return m.group(1).strip() if m else ""
+
     def _posted_date_to_exact(self, posted_date_str):
         """
         Convert Spanish relative postedDate (e.g. 'Hace 8 horas') to exact datetime.
@@ -133,6 +140,7 @@ class WorkanaScraper:
                 desc_html = r.get("description") or ""
                 skills_list = r.get("skills") or []
                 skill_names = [s.get("anchorText") or s.get("title", "") for s in skills_list if isinstance(s, dict)]
+                rating = r.get("rating") or {}
                 projects.append({
                     "slug": slug,
                     "title": self._text_from_html(title_html),
@@ -143,6 +151,9 @@ class WorkanaScraper:
                     "postedDate": r.get("postedDate") or "",
                     "publishedDate": r.get("publishedDate") or "",
                     "authorName": r.get("authorName") or "",
+                    "authorAvatar": self._img_src_from_html(r.get("profileLogo") or ""),
+                    "authorRating": rating.get("label") if isinstance(rating, dict) else "",
+                    "hasVerifiedPaymentMethod": r.get("hasVerifiedPaymentMethod") or False,
                     "totalBids": r.get("totalBids") or "",
                     "country": self._text_from_html(r.get("country") or ""),
                     "isHourly": r.get("isHourly") or False,
@@ -206,13 +217,25 @@ class WorkanaScraper:
                 color=0x00ff00,
                 url=job.get("job_url", ""),
             )
-            embed.add_embed_field(name="Author", value=(job.get("authorName") or "")[:1024], inline=True)
+            embed.add_embed_field(name="Author", value=(job.get("authorName") or "-")[:1024], inline=True)
+            embed.add_embed_field(name="Rating", value=(job.get("authorRating") or "-")[:1024], inline=True)
+            # Always show the client's payment-verification status
+            payment_status = "✅ Verified" if job.get("hasVerifiedPaymentMethod") else "❌ Not verified"
+            embed.add_embed_field(name="Payment", value=payment_status, inline=True)
             embed.add_embed_field(name="Budget", value=(job.get("budget") or "")[:1024], inline=True)
             embed.add_embed_field(name="Posted", value=(job.get("postedDate") or "")[:1024], inline=True)
             embed.add_embed_field(name="Bids", value=(job.get("totalBids") or "")[:1024], inline=True)
             embed.add_embed_field(name="Country", value=(job.get("country") or "-")[:1024], inline=True)
             skills = ", ".join((job.get("skills") or [])[:10])
             embed.add_embed_field(name="Skills", value=skills[:1024] or "-", inline=False)
+
+            # Show the client's avatar as a thumbnail. Discord can't render SVG
+            # (Workana serves an SVG placeholder when no real photo is set), so
+            # only attach raster images.
+            avatar = (job.get("authorAvatar") or "")
+            if avatar.startswith("http") and not avatar.lower().endswith(".svg"):
+                embed.set_thumbnail(url=avatar)
+
             embed.set_footer(text="Workana Job Bot")
 
             webhook = DiscordWebhook(url=webhook_url, username="Workana Bot")
