@@ -42,13 +42,15 @@ A Python bot that monitors [Workana](https://www.workana.com) for new job postin
 Create a `.env` file in the project root (do not commit it):
 
 ```env
+# Discord webhook URL for the it-programming category (required for Discord mode)
+DISCORD_WEBHOOK_IT_PROGRAMMING=https://discord.com/api/webhooks/...
 # Optional: Discord user ID to @mention on new jobs
 JUPITER_DISCORD_ID=your_discord_user_id
 ```
 
 ### Discord webhook
 
-To send jobs to Discord, set the webhook URL in `main.py` in `WorkanaScraper.webhook_urls` under the key for your category (e.g. `'it-programming'`). Replace the placeholder URL with your Discord channel webhook.
+To send jobs to Discord, create a webhook in Discord (Server Settings → Integrations → Webhooks) and put its URL in `DISCORD_WEBHOOK_IT_PROGRAMMING` in your `.env`. The bot reads it from the environment, so the secret never lives in source.
 
 ## Usage
 
@@ -57,7 +59,7 @@ To send jobs to Discord, set the webhook URL in `main.py` in `WorkanaScraper.web
 | `python main.py` | Single run: scrape once and print new jobs. |
 | `python main.py --continuous` or `-c` | Run in a loop (default interval: 300 seconds). |
 | `python main.py --discord` or `-d` | Send new jobs to Discord; single run. |
-| `python main.py -d -c` | Discord + continuous (interval: 2 seconds). |
+| `python main.py -d -c` | Discord + continuous (interval: 60 seconds). |
 | `python main.py -c --interval=60` | Continuous with 60-second interval. |
 
 ### Windows quick start
@@ -88,4 +90,4 @@ This runs the bot in **Discord + continuous** mode (`main.py -d -c`).
 ## Notes
 
 - The bot uses a browser-like `User-Agent` and respects the page structure; if Workana changes their HTML/JSON, parsing may need updates.
-- Discord rate limits apply; the default 2-second interval in Discord mode helps avoid hitting them.
+- Discord rate limits apply; the default 60-second interval in Discord mode helps avoid hitting them and reduces the risk of Workana throttling your IP.

@@ -17,8 +17,6 @@ from colorama import init, Fore, Style
 import re
 from html import unescape
 from discord_webhook import DiscordWebhook, DiscordEmbed
-# from PIL import Image
-from io import BytesIO
 
 # Initialize colorama for colored console output
 init()
@@ -28,9 +26,11 @@ class WorkanaScraper:
         self.seen_jobs_file = "seen_jobs.dat"
         self.seen_jobs = self.load_seen_jobs()
         
-        # Discord webhook URLs for each category
+        # Discord webhook URLs per category, loaded from the environment so secrets
+        # never live in source. Set DISCORD_WEBHOOK_IT_PROGRAMMING in .env.
         self.webhook_urls = {
-            'it-programming': 'https://discord.com/api/webhooks/1513871344339517511/4COeZpcGFhVjvBDAIdZBK0lINKTIcM4uCrRGU8fK38osyyOZeC-0qtHHQBTajCHbEv5I'}
+            'it-programming': os.environ.get("DISCORD_WEBHOOK_IT_PROGRAMMING", "").strip(),
+        }
         # User ID to mention in Discord (set JUPITER_DISCORD_ID in .env for ping); use numeric Discord ID
         self.mention_user_id = os.environ.get("JUPITER_DISCORD_ID", "").strip()
         
@@ -41,7 +41,7 @@ class WorkanaScraper:
                 with open(self.seen_jobs_file, 'r', encoding='utf-8') as f:
                     data = [str(line.strip()) for line in f]
                     return data
-            except:
+            except OSError:
                 return []
         return []
     
@@ -216,8 +216,8 @@ class WorkanaScraper:
             embed.set_footer(text="Workana Job Bot")
 
             webhook = DiscordWebhook(url=webhook_url, username="Workana Bot")
-            #if self.mention_user_id:
-            #    webhook.content = f"<@{self.mention_user_id}>"
+            if self.mention_user_id:
+                webhook.content = f"<@{self.mention_user_id}>"
             webhook.add_embed(embed)
             response = webhook.execute()
 
@@ -231,9 +231,8 @@ class WorkanaScraper:
             return False
 
     def scrape_jobs(self):
-        """Scrape job postings from Workana"""
+        """Scrape job postings from Workana across all configured categories."""
         try:
-            jobs = []
             base_urls = [
                 { 'category': "it-programming", 'url': "https://www.workana.com/jobs?sort=new&category=it-programming&language=xx" }
             ]
@@ -242,14 +241,15 @@ class WorkanaScraper:
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             })
 
-            # print(f"{Fore.CYAN}🔍 Scraping Workana for new job postings...{Style.RESET_ALL}")
+            seen_set = set(self.seen_jobs)
+            all_jobs = []
 
             for base_url in base_urls:
                 print(f"{Fore.CYAN}Target URL: {base_url['url']}{Style.RESET_ALL}")
 
-                response = session.get(base_url['url'], timeout=5)
+                response = session.get(base_url['url'], timeout=15)
                 response.raise_for_status()
-                
+
                 soup = BeautifulSoup(response.content, 'html.parser')
                 # Optional: save HTML for debugging
                 # with open("temp.html", "w", encoding="utf-8") as f:
@@ -260,14 +260,15 @@ class WorkanaScraper:
                 jobs = self.filter_fresh_low_competition(jobs, max_bids=10)
                 if jobs:
                     print(f"{Fore.GREEN}  -> {len(jobs)} posted <=1h ago with <=10 bids{Style.RESET_ALL}")
-                seen_set = set(self.seen_jobs)
                 jobs = [j for j in jobs if (j.get("job_url") or "") not in seen_set]
                 for j in jobs:
                     j["category"] = base_url.get("category", "it-programming")
                     j["postedDate"] = self._posted_date_to_exact(j.get("postedDate") or "")
-                jobs.sort(key=lambda p: p.get("postedDate") or "")
-                return jobs
-                
+                all_jobs.extend(jobs)
+
+            all_jobs.sort(key=lambda p: p.get("postedDate") or "")
+            return all_jobs
+
         except requests.RequestException as e:
             print(f"{Fore.RED}❌ Network error: {e}{Style.RESET_ALL}")
             return []
@@ -329,7 +330,7 @@ def main():
     import sys
     continuous = '--continuous' in sys.argv or '-c' in sys.argv
     discord_mode = '--discord' in sys.argv or '-d' in sys.argv
-    interval = 2 if discord_mode else 300  # 3 seconds for Discord mode, 5 minutes default
+    interval = 60 if discord_mode else 300  # 60s for Discord mode, 5 minutes default
     
     if continuous:
         # Check for custom interval
