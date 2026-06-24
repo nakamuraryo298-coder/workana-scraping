@@ -8,7 +8,8 @@ A Python bot that monitors [Workana](https://www.workana.com) for new job postin
 - **Smart filtering** – Keeps only jobs posted **≤1 hour ago** with **≤10 bids** (low competition).
 - **Seen tracking** – Stores the last 50 seen job URLs in `seen_jobs.dat` so only new jobs are reported.
 - **Console output** – Colored output with title, budget, posted time, bid count, URL, and skills.
-- **Discord** – Optional webhook notifications with embed (author, budget, posted, bids, country, skills).
+- **Discord** – Optional webhook notifications with embed (author, rating, payment status, budget, posted, bids, country, skills, avatar).
+- **Web dashboard** – Local browser UI showing jobs as cards, each with a ready-to-edit **draft proposal** (you submit the bid yourself).
 - **Modes** – Single run or continuous with configurable interval.
 
 ## Requirements
@@ -72,6 +73,26 @@ start.bat
 
 This runs the bot in **Discord + continuous** mode (`main.py -d -c`).
 
+## Web dashboard
+
+A local browser UI that displays collected jobs as cards (avatar, rating, payment status, budget, skills) and a ready-to-edit **draft proposal** for each.
+
+```bash
+python dashboard.py          # serves http://127.0.0.1:5000
+```
+
+The scraper (`main.py`) writes `jobs.json`; the dashboard reads it and auto-refreshes every 30s. Run both together:
+
+```bash
+start_dashboard.bat          # launches scraper + dashboard + opens the browser
+```
+
+### Draft proposals (you submit the bid)
+
+Each job card has a **draft proposal** you can edit and copy, plus an **"Open to bid →"** button that opens the job on Workana so you submit the bid manually. The bot never submits bids itself — this avoids Workana ToS/ban risk and protects your paid bid credits.
+
+To customize the proposal text, create `proposal_template.txt` in the project root. Available placeholders: `{author}`, `{title}`, `{skills}`, `{budget}`. If the file is absent, a built-in Spanish default is used.
+
 ## Output
 
 - **Console**: Job title, budget, posted time, bids, URL, and skills.
@@ -81,11 +102,15 @@ This runs the bot in **Discord + continuous** mode (`main.py -d -c`).
 
 | File | Purpose |
 |------|--------|
-| `main.py` | Scraper, filters, Discord logic, CLI. |
+| `main.py` | Scraper, filters, Discord logic, proposal drafting, CLI. |
+| `dashboard.py` | Flask web dashboard (reads `jobs.json`). |
 | `requirements.txt` | Python dependencies. |
 | `start.bat` | Runs `main.py -d -c` on Windows. |
-| `.env` | Optional env vars (not in repo). |
+| `start_dashboard.bat` | Runs scraper + dashboard and opens the browser. |
+| `.env` | Env vars: webhook, mention ID (not in repo). |
 | `seen_jobs.dat` | Last 50 seen job URLs (not in repo). |
+| `jobs.json` | Collected jobs + draft proposals for the dashboard (not in repo). |
+| `proposal_template.txt` | Optional custom proposal template (not in repo). |
 
 ## Notes
 

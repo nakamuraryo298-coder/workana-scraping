@@ -61,6 +61,94 @@ class WorkanaScraper:
         with open(self.seen_jobs_file, "w", encoding="utf-8") as f:
             f.write("\n".join(self.seen_jobs))
 
+    # ------------------------------------------------------------------ #
+    # Job store (for the web dashboard) + proposal drafting
+    # ------------------------------------------------------------------ #
+    JOBS_STORE = "jobs.json"
+    JOBS_STORE_MAX = 100
+
+    # Default proposal template. Override by creating proposal_template.txt
+    # in the project root. Placeholders: {author} {title} {skills} {budget}
+    DEFAULT_PROPOSAL = (
+        "Hola {author},\n\n"
+        "Vi tu proyecto \"{title}\" y me interesa mucho participar. "
+        "Tengo experiencia sólida en {skills}, justo lo que necesitas para este trabajo.\n\n"
+        "Me gustaría conversar sobre los detalles y cómo puedo ayudarte a lograr el "
+        "resultado que buscas dentro de tu presupuesto ({budget}). Puedo empezar de inmediato.\n\n"
+        "Quedo atento a tu respuesta.\nSaludos."
+    )
+
+    def _proposal_template(self):
+        """Return the proposal template: proposal_template.txt if present, else default."""
+        path = "proposal_template.txt"
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    txt = f.read().strip()
+                    if txt:
+                        return txt
+            except OSError:
+                pass
+        return self.DEFAULT_PROPOSAL
+
+    def build_proposal(self, job):
+        """Build a draft proposal for a job by filling the template with its data."""
+        author = (job.get("authorName") or "").strip() or "estimado/a cliente"
+        skills = ", ".join((job.get("skills") or [])[:6]) or "las tecnologías requeridas"
+        budget = (job.get("budget") or "").strip() or "el presupuesto indicado"
+        title = (job.get("title") or "").strip()
+        try:
+            return self._proposal_template().format(
+                author=author, title=title, skills=skills, budget=budget
+            )
+        except (KeyError, IndexError):
+            # Template has a bad placeholder; fall back to the default
+            return self.DEFAULT_PROPOSAL.format(
+                author=author, title=title, skills=skills, budget=budget
+            )
+
+    def save_jobs_store(self, jobs):
+        """Persist enriched job records (with draft proposal) to jobs.json for the dashboard."""
+        if not jobs:
+            return
+        existing = []
+        if os.path.exists(self.JOBS_STORE):
+            try:
+                with open(self.JOBS_STORE, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except (OSError, json.JSONDecodeError):
+                existing = []
+        existing_urls = {j.get("job_url") for j in existing if isinstance(j, dict)}
+        detected_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        new_records = []
+        for p in jobs:
+            url = p.get("job_url") or ""
+            if not url or url in existing_urls:
+                continue
+            new_records.append({
+                "title": p.get("title", ""),
+                "job_url": url,
+                "authorName": p.get("authorName", ""),
+                "authorRating": p.get("authorRating", ""),
+                "authorAvatar": p.get("authorAvatar", ""),
+                "hasVerifiedPaymentMethod": bool(p.get("hasVerifiedPaymentMethod")),
+                "budget": p.get("budget", ""),
+                "postedDate": p.get("postedDate", ""),
+                "totalBids": p.get("totalBids", ""),
+                "country": p.get("country", ""),
+                "skills": p.get("skills", []),
+                "description": p.get("description", ""),
+                "proposal": self.build_proposal(p),
+                "detectedAt": detected_at,
+            })
+        if not new_records:
+            return
+        # Newest first, capped
+        combined = new_records + existing
+        combined = combined[: self.JOBS_STORE_MAX]
+        with open(self.JOBS_STORE, "w", encoding="utf-8") as f:
+            json.dump(combined, f, ensure_ascii=False, indent=2)
+
     def _text_from_html(self, html_str):
         """Strip HTML tags and decode entities from a string."""
         if not html_str:
@@ -315,6 +403,7 @@ class WorkanaScraper:
             new_jobs.append(p.get("job_url", ""))
             if discord_mode:
                 self.send_discord_notification(p)
+        self.save_jobs_store(jobs)
         self.save_seen_jobs(new_jobs)
         print(f"{Fore.GREEN}Found {len(new_jobs)} job(s).{' Sent to Discord.' if discord_mode else ''}{Style.RESET_ALL}\n")
 

@@ -1,3 +1,6 @@
 temp.html
 .env
 seen_jobs.dat
+jobs.json
+proposal_template.txt
+__pycache__/
