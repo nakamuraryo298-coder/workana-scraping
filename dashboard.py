@@ -65,6 +65,11 @@ PAGE = r"""
     .badge { display:inline-block; padding:1px 7px; border-radius:20px; font-size:12px; }
     .ok { background:rgba(67,181,129,.15); color:var(--accent); }
     .no { background:rgba(240,71,71,.15); color:var(--warn); }
+    .badge.new { background:rgba(78,161,255,.18); color:var(--link); margin-left:6px; vertical-align:middle; }
+    .card.is-new { border-left-color:var(--link); box-shadow:0 0 0 1px rgba(78,161,255,.25); }
+    .stats { display:flex; gap:8px; flex-wrap:wrap; }
+    .stat { background:#1a1d24; border:1px solid var(--line); border-radius:20px; padding:2px 10px; font-size:13px; }
+    .stat b { color:var(--txt); } .stat.newstat b { color:var(--link); }
     .skills { font-size:12px; color:var(--muted); }
     details { background:#12151c; border:1px solid var(--line); border-radius:8px; padding:8px 10px; }
     summary { cursor:pointer; font-size:13px; color:var(--link); }
@@ -82,7 +87,7 @@ PAGE = r"""
 <body>
   <header>
     <h1>Workana Jobs</h1>
-    <span class="meta" id="count"></span>
+    <div class="stats" id="stats"></div>
     <span class="meta">· auto-refresh {{refresh}}s</span>
   </header>
   <div class="wrap">
@@ -103,16 +108,18 @@ function badge(verified){
 }
 function esc(s){ return (s||'').replace(/[&<>"]/g, c => (
   {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function bidCount(s){ const m=(s||'').match(/\d+/); return m?parseInt(m[0],10):0; }
 
-function card(j){
+function card(j, isNew){
   const skills = (j.skills||[]).slice(0,10).join(', ') || '-';
   const avatar = (j.authorAvatar && j.authorAvatar.startsWith('http') && !j.authorAvatar.toLowerCase().endsWith('.svg'))
     ? j.authorAvatar : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg"/>';
+  const newBadge = isNew ? '<span class="badge new">NEW</span>' : '';
   return `
-  <div class="card">
+  <div class="card${isNew ? ' is-new' : ''}">
     <div class="top">
       <img class="avatar" src="${esc(avatar)}" alt="" onerror="this.style.visibility='hidden'"/>
-      <div class="title"><a href="${esc(j.job_url)}" target="_blank" rel="noopener">${esc(j.title)}</a></div>
+      <div class="title"><a href="${esc(j.job_url)}" target="_blank" rel="noopener">${esc(j.title)}</a>${newBadge}</div>
     </div>
     <div class="rows">
       <div><span class="k">Author:</span> ${esc(j.authorName)||'-'}</div>
@@ -146,9 +153,16 @@ function copyText(id, btn){
 async function load(){
   try {
     const r = await fetch('/api/jobs'); const jobs = await r.json();
-    document.getElementById('count').textContent = jobs.length + ' job(s)';
+    // Newest batch = jobs sharing the most recent detectedAt timestamp
+    const latest = jobs.reduce((a,j) => (j.detectedAt && j.detectedAt > a) ? j.detectedAt : a, '');
+    const newCount = latest ? jobs.filter(j => j.detectedAt === latest).length : 0;
+    const totalBids = jobs.reduce((s,j) => s + bidCount(j.totalBids), 0);
+    document.getElementById('stats').innerHTML =
+      `<span class="stat">Tasks so far: <b>${jobs.length}</b></span>` +
+      `<span class="stat newstat">New: <b>${newCount}</b></span>` +
+      `<span class="stat">Total bids: <b>${totalBids}</b></span>`;
     document.getElementById('grid').innerHTML = jobs.length
-      ? jobs.map(card).join('')
+      ? jobs.map(j => card(j, latest && j.detectedAt === latest)).join('')
       : '<div class="empty">No jobs yet. Start the scraper: <code>python main.py -d -c</code></div>';
   } catch(e){ /* keep last view on transient error */ }
 }
